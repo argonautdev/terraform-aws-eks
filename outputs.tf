@@ -124,17 +124,20 @@ output "cluster_tls_certificate_sha1_fingerprint" {
 
 output "cluster_iam_role_name" {
   description = "IAM role name of the EKS cluster"
-  value       = try(aws_iam_role.this[0].name, null)
+  # value       = try(aws_iam_role.this[0].name, null)
+  value       = try(aws_iam_role.cluster[0].name, null)
 }
 
 output "cluster_iam_role_arn" {
   description = "IAM role ARN of the EKS cluster"
-  value       = try(aws_iam_role.this[0].arn, null)
+  # value       = try(aws_iam_role.this[0].arn, null)
+  value       = try(aws_iam_role.cluster[0].arn, null)
 }
 
 output "cluster_iam_role_unique_id" {
   description = "Stable and unique string identifying the IAM role"
-  value       = try(aws_iam_role.this[0].unique_id, null)
+  # value       = try(aws_iam_role.this[0].unique_id, null)
+  value       = try(aws_iam_role.cluster[0].unique_id, null)
 }
 
 ################################################################################

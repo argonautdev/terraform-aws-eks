@@ -228,6 +228,47 @@ module "fargate_profile" {
 # EKS Managed Node Group
 ################################################################################
 
+resource "null_resource" "add_tags_to_ngs" {
+  for_each = var.eks_managed_node_groups
+  triggers  =  { always_run = "${timestamp()}" }
+  provisioner "local-exec" {
+    command = "asg_names=`aws autoscaling describe-auto-scaling-groups --filters 'Name=tag-key,Values=eks:cluster-name' 'Name=tag-value,Values=${var.cluster_name}' --query 'AutoScalingGroups[].AutoScalingGroupName' --output text`; for eachasg in $asg_names; do aws autoscaling create-or-update-tags --tags ResourceId=$eachasg,ResourceType=auto-scaling-group,Key=ng-prefix,Value=${each.key},PropagateAtLaunch=false; done"
+  }
+}
+
+##Get AutoScaling Group
+data "aws_autoscaling_groups" "groups" {
+  depends_on = [null_resource.add_tags_to_ngs]
+  for_each = var.eks_managed_node_groups
+  filter {
+    name   = "tag-value"
+    values = ["${each.key}"]
+  }
+
+  filter {
+    name   = "tag-key"
+    values = ["ng-prefix"]
+  }  
+  
+}
+
+resource "null_resource" "asg-describe" {
+  depends_on = [null_resource.add_tags_to_ngs]
+  for_each = var.eks_managed_node_groups
+  triggers  =  { always_run = "${timestamp()}" }
+  provisioner "local-exec" {
+    # command = "desired_capacity=`aws autoscaling describe-auto-scaling-groups --filters 'Name=tag-key,Values=ng-full-name' 'Name=tag-value,Values=${each.key}' --query 'AutoScalingGroups[].DesiredCapacity' --output text`; [ ! -z \"$desired_capacity\" ] && echo $desired_capacity > \"${path.module}/${each.key}-desired.txt\" || echo ${each.value.desired_capacity} > \"${path.module}/${each.key}-desired.txt\""
+    command = "desired_capacity=`aws autoscaling describe-auto-scaling-groups --filters 'Name=tag-key,Values=ng-prefix' 'Name=tag-value,Values=${each.key}' --query 'AutoScalingGroups[].DesiredCapacity' --output text`; [ ! -z \"$desired_capacity\" ] && echo $desired_capacity > \"${path.module}/${each.key}-desired.txt\" || echo ${each.value.desired_capacity} > \"${path.module}/${each.key}-desired.txt\""
+  }
+}
+
+
+data "local_file" "desired_size" {
+  depends_on = [null_resource.asg-describe]
+  for_each = var.eks_managed_node_groups
+  filename = "${path.module}/${each.key}-desired.txt"
+}
+
 module "eks_managed_node_group" {
   source = "./modules/eks-managed-node-group"
 
@@ -245,9 +286,13 @@ module "eks_managed_node_group" {
 
   subnet_ids = try(each.value.subnet_ids, var.eks_managed_node_group_defaults.subnet_ids, var.subnet_ids)
 
-  min_size     = try(each.value.min_size, var.eks_managed_node_group_defaults.min_size, 1)
-  max_size     = try(each.value.max_size, var.eks_managed_node_group_defaults.max_size, 3)
-  desired_size = try(each.value.desired_size, var.eks_managed_node_group_defaults.desired_size, 1)
+  # min_size     = try(each.value.min_size, var.eks_managed_node_group_defaults.min_size, 1)
+  # max_size     = try(each.value.max_size, var.eks_managed_node_group_defaults.max_size, 3)
+  # desired_size = try(each.value.desired_size, var.eks_managed_node_group_defaults.desired_size, 1)
+  
+  desired_size = each.value.min_capacity <= tonumber(trimspace(data.local_file.desired_size[each.key].content)) ? tonumber(trimspace(data.local_file.desired_size[each.key].content)) : each.value["min_capacity"]
+  max_size     = each.value.max_capacity
+  min_size     = each.value.min_capacity
 
   ami_id              = try(each.value.ami_id, var.eks_managed_node_group_defaults.ami_id, "")
   ami_type            = try(each.value.ami_type, var.eks_managed_node_group_defaults.ami_type, null)
@@ -460,4 +505,36 @@ module "self_managed_node_group" {
   cluster_primary_security_group_id = try(each.value.attach_cluster_primary_security_group, var.self_managed_node_group_defaults.attach_cluster_primary_security_group, false) ? aws_eks_cluster.this[0].vpc_config[0].cluster_security_group_id : null
 
   tags = merge(var.tags, try(each.value.tags, var.self_managed_node_group_defaults.tags, {}))
+}
+
+# ###Code for adding tag prefix 
+resource "aws_autoscaling_group_tag" "asg_tag" {
+  for_each = var.eks_managed_node_groups
+  autoscaling_group_name = module.eks_managed_node_group[each.key].node_group_autoscaling_group_names[0]
+  # aws_eks_node_group.this[0].resources[*].autoscaling_groups[*].name
+  # aws_eks_node_group.this[each.key].resources[0].autoscaling_groups[0].name
+
+  tag {
+    key   = "ng-prefix"
+    value = each.key
+
+    propagate_at_launch = false
+  }
+  
+}
+
+# ###Code for adding tag full tag
+resource "aws_autoscaling_group_tag" "ng_full_tag" {
+  for_each = var.eks_managed_node_groups
+
+  # autoscaling_group_name = aws_eks_node_group.workers[each.key].resources[0].autoscaling_groups[0].name
+  autoscaling_group_name = module.eks_managed_node_group[each.key].node_group_autoscaling_group_names[0]
+
+  tag {
+    key   = "ng-full-name"
+    value = split(":", module.eks_managed_node_group[each.key].node_group_id)[1]
+
+    propagate_at_launch = false
+  }
+  
 }

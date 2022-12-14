@@ -4,7 +4,8 @@ data "aws_caller_identity" "current" {}
 locals {
   create = var.create && var.putin_khuylo
 
-  cluster_role = try(aws_iam_role.this[0].arn, var.iam_role_arn)
+  # cluster_role = try(aws_iam_role.this[0].arn, var.iam_role_arn)
+  cluster_role = try(aws_iam_role.cluster[0].arn, var.iam_role_arn)
 
   create_outposts_local_cluster    = length(var.outpost_config) > 0
   enable_cluster_encryption_config = length(var.cluster_encryption_config) > 0 && !local.create_outposts_local_cluster
@@ -144,7 +145,8 @@ module "kms" {
 ################################################################################
 
 locals {
-  cluster_sg_name   = coalesce(var.cluster_security_group_name, "${var.cluster_name}-cluster")
+  # cluster_sg_name   = coalesce(var.cluster_security_group_name, "${var.cluster_name}-cluster")
+  cluster_sg_name   = coalesce(var.cluster_security_group_name, "${var.cluster_name}")
   create_cluster_sg = local.create && var.create_cluster_security_group
 
   cluster_security_group_id = local.create_cluster_sg ? aws_security_group.cluster[0].id : var.cluster_security_group_id
@@ -166,13 +168,14 @@ resource "aws_security_group" "cluster" {
   count = local.create_cluster_sg ? 1 : 0
 
   name        = var.cluster_security_group_use_name_prefix ? null : local.cluster_sg_name
-  name_prefix = var.cluster_security_group_use_name_prefix ? "${local.cluster_sg_name}${var.prefix_separator}" : null
+  # name_prefix = var.cluster_security_group_use_name_prefix ? "${local.cluster_sg_name}${var.prefix_separator}" : null
+  name_prefix = var.cluster_security_group_use_name_prefix ? "${local.cluster_sg_name}" : null
   description = var.cluster_security_group_description
   vpc_id      = var.vpc_id
 
   tags = merge(
     var.tags,
-    { "Name" = local.cluster_sg_name },
+    { "Name" = "${local.cluster_sg_name}-eks_cluster_sg" },
     var.cluster_security_group_tags
   )
 
@@ -235,7 +238,8 @@ resource "aws_iam_openid_connect_provider" "oidc_provider" {
 
 locals {
   create_iam_role        = local.create && var.create_iam_role
-  iam_role_name          = coalesce(var.iam_role_name, "${var.cluster_name}-cluster")
+  # iam_role_name          = coalesce(var.iam_role_name, "${var.cluster_name}-cluster")
+  iam_role_name          = coalesce(var.iam_role_name, "${var.cluster_name}")
   iam_role_policy_prefix = "arn:${data.aws_partition.current.partition}:iam::aws:policy"
 
   cluster_encryption_policy_name = coalesce(var.cluster_encryption_policy_name, "${local.iam_role_name}-ClusterEncryption")
@@ -270,11 +274,13 @@ data "aws_iam_policy_document" "assume_role_policy" {
   }
 }
 
-resource "aws_iam_role" "this" {
+# resource "aws_iam_role" "this" {
+resource "aws_iam_role" "cluster" {
   count = local.create_iam_role ? 1 : 0
 
   name        = var.iam_role_use_name_prefix ? null : local.iam_role_name
-  name_prefix = var.iam_role_use_name_prefix ? "${local.iam_role_name}${var.prefix_separator}" : null
+  # name_prefix = var.iam_role_use_name_prefix ? "${local.iam_role_name}${var.prefix_separator}" : null
+  name_prefix = var.iam_role_use_name_prefix ? "${local.iam_role_name}" : null
   path        = var.iam_role_path
   description = var.iam_role_description
 
@@ -316,14 +322,16 @@ resource "aws_iam_role_policy_attachment" "this" {
   } : k => v if local.create_iam_role }
 
   policy_arn = each.value
-  role       = aws_iam_role.this[0].name
+  # role       = aws_iam_role.this[0].name
+  role       = aws_iam_role.cluster[0].name
 }
 
 resource "aws_iam_role_policy_attachment" "additional" {
   for_each = { for k, v in var.iam_role_additional_policies : k => v if local.create_iam_role }
 
   policy_arn = each.value
-  role       = aws_iam_role.this[0].name
+  # role       = aws_iam_role.this[0].name
+  role       = aws_iam_role.cluster[0].name
 }
 
 # Using separate attachment due to `The "for_each" value depends on resource attributes that cannot be determined until apply`
@@ -332,7 +340,8 @@ resource "aws_iam_role_policy_attachment" "cluster_encryption" {
   count = local.create_iam_role && var.attach_cluster_encryption_policy && local.enable_cluster_encryption_config ? 1 : 0
 
   policy_arn = aws_iam_policy.cluster_encryption[0].arn
-  role       = aws_iam_role.this[0].name
+  # role       = aws_iam_role.this[0].name
+  role       = aws_iam_role.cluster[0].name
 }
 
 resource "aws_iam_policy" "cluster_encryption" {
@@ -517,7 +526,7 @@ resource "kubernetes_config_map" "aws_auth" {
 
 resource "kubernetes_config_map_v1_data" "aws_auth" {
   count = var.create && var.manage_aws_auth_configmap ? 1 : 0
-
+  
   force = true
 
   metadata {
@@ -529,6 +538,6 @@ resource "kubernetes_config_map_v1_data" "aws_auth" {
 
   depends_on = [
     # Required for instances where the configmap does not exist yet to avoid race condition
-    kubernetes_config_map.aws_auth,
+    kubernetes_config_map.aws_auth
   ]
 }
