@@ -507,37 +507,54 @@ locals {
   }
 }
 
-resource "kubernetes_config_map" "aws_auth" {
-  count = var.create && var.create_aws_auth_configmap ? 1 : 0
+# resource "kubernetes_config_map" "aws_auth" {
+#   count = var.create && var.create_aws_auth_configmap ? 1 : 0
 
-  metadata {
-    name      = "aws-auth"
-    namespace = "kube-system"
-  }
+#   metadata {
+#     name      = "aws-auth"
+#     namespace = "kube-system"
+#   }
 
-  data = local.aws_auth_configmap_data
+#   data = local.aws_auth_configmap_data
 
-  lifecycle {
-    # We are ignoring the data here since we will manage it with the resource below
-    # This is only intended to be used in scenarios where the configmap does not exist
-    ignore_changes = [data]
-  }
-}
+#   lifecycle {
+#     # We are ignoring the data here since we will manage it with the resource below
+#     # This is only intended to be used in scenarios where the configmap does not exist
+#     ignore_changes = [data]
+#   }
+# }
 
-resource "kubernetes_config_map_v1_data" "aws_auth" {
-  count = var.create && var.manage_aws_auth_configmap ? 1 : 0
+# resource "kubernetes_config_map_v1_data" "aws_auth" {
+#   count = var.create && var.manage_aws_auth_configmap ? 1 : 0
   
-  force = true
+#   force = true
+
+#   metadata {
+#     name      = "aws-auth"
+#     namespace = "kube-system"
+#   }
+
+#   data = local.aws_auth_configmap_data
+
+#   depends_on = [
+#     # Required for instances where the configmap does not exist yet to avoid race condition
+#     kubernetes_config_map.aws_auth
+#   ]
+# }
+
+resource "kubernetes_config_map" "aws_auth" {
+  count = var.create && var.manage_aws_auth_configmap ? 1 : 0
 
   metadata {
     name      = "aws-auth"
     namespace = "kube-system"
+    labels = {
+      "app.kubernetes.io/managed-by" = "Terraform"
+      # / are replaced by . because label validator fails in this lib
+      # https://github.com/kubernetes/apimachinery/blob/1bdd76d09076d4dc0362456e59c8f551f5f24a72/pkg/util/validation/validation.go#L166
+      "terraform.io/module" = "terraform-aws-modules.eks.aws"
+    }
   }
 
   data = local.aws_auth_configmap_data
-
-  depends_on = [
-    # Required for instances where the configmap does not exist yet to avoid race condition
-    kubernetes_config_map.aws_auth
-  ]
 }
