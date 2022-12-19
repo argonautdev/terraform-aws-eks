@@ -258,7 +258,7 @@ resource "null_resource" "asg-describe" {
   triggers  =  { always_run = "${timestamp()}" }
   provisioner "local-exec" {
     # command = "desired_capacity=`aws autoscaling describe-auto-scaling-groups --filters 'Name=tag-key,Values=ng-full-name' 'Name=tag-value,Values=${each.key}' --query 'AutoScalingGroups[].DesiredCapacity' --output text`; [ ! -z \"$desired_capacity\" ] && echo $desired_capacity > \"${path.module}/${each.key}-desired.txt\" || echo ${each.value.desired_capacity} > \"${path.module}/${each.key}-desired.txt\""
-    command = "desired_capacity=`aws autoscaling describe-auto-scaling-groups --filters 'Name=tag-key,Values=ng-prefix' 'Name=tag-value,Values=${each.key}' --query 'AutoScalingGroups[].DesiredCapacity' --output text`; [ ! -z \"$desired_capacity\" ] && echo $desired_capacity > \"${path.module}/${each.key}-desired.txt\" || echo ${each.value.desired_capacity} > \"${path.module}/${each.key}-desired.txt\""
+    command = "desired_capacity=`aws autoscaling describe-auto-scaling-groups --filters 'Name=tag-key,Values=ng-prefix' 'Name=tag-value,Values=${each.key}' --filters 'Name=tag-key,Values=eks:cluster-name' 'Name=tag-value,Values=${var.cluster_name}' --query 'AutoScalingGroups[].DesiredCapacity' --output text`; [ ! -z \"$desired_capacity\" ] && echo $desired_capacity > \"${path.module}/${each.key}-desired.txt\" || echo ${each.value.desired_capacity} > \"${path.module}/${each.key}-desired.txt\""
   }
 }
 
@@ -269,7 +269,7 @@ data "local_file" "desired_size" {
   filename = "${path.module}/${each.key}-desired.txt"
 }
 
-module "eks_managed_node_group" {
+module "eks_managed_node_group" { 
   source = "./modules/eks-managed-node-group"
 
   for_each = { for k, v in var.eks_managed_node_groups : k => v if var.create && !local.create_outposts_local_cluster }

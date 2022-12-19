@@ -24,7 +24,7 @@ output "cluster_id" {
 
 output "cluster_name" {
   description = "The name of the EKS cluster"
-  value       = try(aws_eks_cluster.this[0].name, null)
+  value       = split("/", aws_eks_cluster.this[0].arn)[1]
 }
 
 output "cluster_oidc_issuer_url" {
